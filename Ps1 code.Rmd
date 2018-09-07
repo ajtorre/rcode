@@ -1,0 +1,232 @@
+---
+title: 'Stat 243- Problem Set 1 '
+author: "A.J. Torre"
+date: "August 29, 2018"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(formatR)
+knitr::opts_chunk$set(tidy.opts = list(width.cutoff=80), tidy =TRUE)
+```
+
+## Problems
+
+1. Google Survey filled out last week.
+
+2. Reading on "Memory Hierarchy" and "Memory Cache"
+
+3. a) First, to download five files, I used a for-loop and the curl option to get the data from 2013-2017. Once the files were downloaded and I saw they were csv.gz files, I used a for-loop and the gunzip command to unzip all the files into readable csvs. Lastly, I used the wc -l and another for-loop to print out how many lines of data were in each file.
+```{r, engine= 'bash', eval= FALSE}
+mkdir temporary
+cd temporary
+#to make a directory for all the files
+
+for i in {3..7}
+do
+  curl https://www1.ncdc.noaa.gov/pub/data/ghcn/daily/by_year/201$i.csv.gz -o data$201i.csv.gz
+done
+#this for-loop is to download multiple data files at once
+
+for i in {3..7}; do gunzip data201$i.csv.gz; done
+#data files are gz so they need to be unzipped in order to be used
+
+for i in {3..7}; do wc -l data201$i.csv; done
+#in order to count how many lines of data are in each file
+```
+![Example output of downloading files](\Users\AJ\OneDrive\Pictures\Screenshots\2018-09-05 (2).png)
+Example output of using curl in a for-loop to downlaod files. 
+
+3. b) To get the station names text file, I used curl and then used grep as well as cut (since the station id is in the first column) to search for the state ID for Death Valley, and then saved this command in a variable called deathvalley. Next, I used a for-loop and three greps along with the pipes (one for $deathvalley, one for "TMAX", and one for the month of March) in order to search each file and then save this information in a new csv file.
+
+```{r, engine='bash', eval=FALSE}
+curl https://www1.ncdc.noaa.gov/pub/data/ghcn/daily/ghcnd-stations.txt -o stationnames.txt
+#this is to download the txt file one directory above the previous data
+
+deathvalley="$(grep -i "Death Valley" stationnames.txt|cut -d ' ' -f1)"
+
+#this is to save the command that finds the station ID for Death Valley 
+#so it can be used in the next code to subset the data
+
+for i in {3..7}
+do
+  grep $deathvalley data201$i.csv| grep "TMAX"| grep "201"$i"03" > marchmaxtemp201$i.csv
+done
+#this for loop greps for the three criterion in each file and saves the subset data
+```
+3. c) To plot, the data, I combined the data files all into one. Since I'm working on a Windows/ Ubuntu, I ended up needing to scp the file from Ubuntu to my SCF and then back to Windows. Below is some of the code that I used to do that. 
+
+```{r, engine= 'bash', eval= FALSE}
+for i in {3..7}; do cat marchmaxtemp201$i.csv >marchmaxtempdv.csv; done
+#this code is to combine the five csvs into one file
+
+ls #to make sure file was created
+
+ssh scf-ug01.berkeley.edu
+scp marchmaxtempdv.csv ajtorre@scf-ug01.berkeley.edu:.
+#used ssh and scp from temporary directory to copy data file into SCF
+
+cd / mnt/c
+ssh ajtorre@scf-ug01.berkeley.edu
+
+```
+3. c) [continued] Next, to actually plot the data, I read the file into R and used ggplot2 to create a boxplot for the dates as the x-axis and the temperature as the y-axis. In order to make it easier to plot and use ggplot2, column labels were added.
+
+```{r code}
+tempv<-read.csv(file.path("marchmaxtempdv.csv"), header=FALSE)
+head(tempv)
+#to read data into R and make sure it looks good
+```
+
+```{r code for graph}
+colnames(tempv)<-c("StateID", "Date", "TMAX", "TEMP")
+#add names to the first 4 cols to make data easier to read and plot
+
+library(ggplot2)
+ggplot(tempv, aes(x=substring(tempv$Date,6), y=tempv$TEMP))+geom_boxplot()+labs(title="Death Valley Temps in March")+xlab("Date")+ylab("Temp")
+#load ggplot2 in and plot the data
+```
+3. d) To create a function to generalize the above code, I first made smaller functions to do each part of the code, like one called get_year_data() to download the files between the years that the user specifies. I also started with code to accomplish the tasks, assuming the user entered the variables correctly (so very similar code to parts a),b), and c)), and then built error messages once the core of the code was complete that would hopefully address some of the most common errors. Then, I combined the separate functions into one as from reading some articles online, it seems like bash isn't nested function friendly. 
+
+![Example output of building a function to first get yearly data](\Users\AJ\OneDrive\Pictures\Screenshots\2018-09-02 (1).png)
+
+```{r, engine='bash', eval= FALSE}
+get_weather()
+# this function will take user input to subset data for the time period, place, and 
+#weather variable of users' interest 
+
+#this block of code will take user input for start and end years and then download, unzip,
+#and count the lines of data in each yearly file
+{
+echo "Enter start year between 1763 and 2018"
+read year1
+echo "Enter end year between 1763 and 2018"
+read year2
+if [ "$year1" -lt "1763" ] || [ "$year2" -lt "1763" ]; then
+  echo "You must pick years 1763 and after. Shell will now exit."
+  sleep 3
+  exit
+elif [ "$year1" -gt "2018" ] || [ "$year2" -gt "2018" ]; then
+  echo "You must pick years from 2018 and below. Shell will now exit."
+  sleep 3
+  exit
+else
+  for ((c=$year1; c<=$year2; c++))
+  do 
+    curl https://www1.ncdc.noaa.gov/pub/data/ghcn/daily/by_year/$c.csv.gz -o data$c.csv.gz
+  done
+  for ((c=$year1; c<=$year2; c++))
+  do 
+    gunzip data$c.csv.gz
+  done
+  for ((c=$year1; c<=$year2; c++))
+  do 
+    grep -c ^ data$c.csv
+  done
+fi
+
+# this block of code will get the station names & take user input 
+#for their city of interest to get id
+curl https://www1.ncdc.noaa.gov/pub/data/ghcn/daily/ghcnd-stations.txt -o stationnames.txt
+echo "Enter the name of the city you are interested in"
+read city
+citycount="$(grep -i "${city}" stationnames.txt|wc -l)"
+if [ "$citycount" -gt "1" ]; then
+  echo "Sorry, there are multiple station ids for that city. Please be more specific with 
+  the location. Shell will now exit."
+  sleep 3
+  exit
+#there are some city names with multiple station ids, such as San Francisco so user input
+# will need to be more specific in order to get a unique id
+elif [ "$citycount" -eq "1" ]; then
+  cityid="$(grep -i "${city}" stationnames.txt| cut -d ' ' -f1)"
+else
+  echo "Sorry, we do not have data on that city. Shell will now exit."
+  sleep 3
+  exit
+fi
+
+#this block of code will take user input for the weather variable and month of interest, 
+#which is used with the station id to then subset the user's data
+echo "Enter weather variable you're interested in"
+read weathervar
+echo "Enter the month you're interested in. Use the format January is 01, February is 02."
+read month
+if grep -q -i -m 1 "${weathervar}" data"${year1}".csv; then
+  if grep -q -m 1 $year1$month data"${year1}".csv; then
+    for ((c=$year1; c<=$year2; c++))
+    do 
+      grep $cityid data$c.csv| grep -i $weathervar| grep $c$month > subsetdata$c.csv
+    done
+  else
+    echo "Sorry, those are not valid months. Please be sure to input the month in 2 digits, 
+    ex August is 08. Shell will now exit."
+    sleep 3
+    exit
+  fi
+  else
+    echo "Sorry, those are not valid weather variables. Remember, your choices are TMAX, 
+    PRECIP, and TMIN. Shell will now exit."
+    sleep 3
+    exit
+fi
+for ((c=$year1; c<=$year2; c++)); do rm data$c.csv; done
+}
+```
+This code will give the user an error if: the user inputs years outside of the 1763-2018 range; the city name isn't specific enough (for ex, San Francisco has many station ids attributed to it);the city is not within the data set, i.e. grep returns nothing for the city entered; the weather variable inputted is not found in the data files; the month entered is not in the format 01, 02, 03, etc. or not found within the first year the user entered. Some things that could still be resolved with the code are that it could be more user friendly (flexiblity with how users input the month or city of interest) as well as possibly some more if/ else statements to check for errors. Below is example output for this function. 
+![Example output of running the function to get user input](\Users\AJ\OneDrive\Pictures\ScreenShots\2018-09-02 (3).png)
+
+Lastly, to create a manual page for the function, I used the following code and vi command to be able to type in code and save it. The code basically outlines the different errors users could get and how to try to avoid getting these errors by how they format their input. It also just gives the typical manual page info about bugs, author, etc. I then used sudo cp in order to install it in the man directory. 
+
+```{r, engine= 'bash', eval= FALSE}
+vi get_weather
+. \ " Manpage for get_weather
+. \ " Contact ajtorre@berkeley.edu to correct any errors or typos
+. TH man 6 "03 September 2018" "1.0" "get_weather man page"
+. SH NAME
+get_weather\- get info from the NCDC on year, month, and city's weather of interest
+.SH SYNOPSIS
+get_weather [year1] [year2] [city] [weathervar] [month]
+.SH DESCRIPTION
+get_weather is a program that allows users to input their choices for the year, month, 
+city, and weather variable they're interested in and the program will download and 
+subset the user's preferred data.To ensure no errors when running the program, be 
+sure to follow the format for each variable. So, pick years between 1763 and 2018, 
+use specific city information to get a unique station id, weather variables must be 
+either TMAX, PRCP, or TMIN, and enter the month in the format 01 for January, 02 
+for February. 
+.SH OPTIONS
+get_weather does not take options at this time
+.SH BUGS
+No known bugs
+.SH AUTHOR
+A.J. Torre (ajtorre@berkeley.edu)
+
+#press esc and shift z-z to save vi text
+
+sudo cp get_weather /usr/local/man/get_weather
+man ./get_weather 
+
+```
+
+![Example of the manual page for get_weather](\Users\AJ\OneDrive\Pictures\ScreenShots\2018-09-05.png)
+
+4. To download multiple text files at once, I first looked online at some examples of how to use curl to download all files/ all files of a certain type from a website. From these examples and also looking at the format of the ncdc website, this code uses grep multiple times in order to get around the extra characters in the web address in order to identify the txt files. Then, I used curl in a for-loop to download all the txt files and echo which file is being downloaded. 
+
+```{r, engine='bash', eval= FALSE}
+for file in $(curl https://www1.ncdc.noaa.gov/pub/data/ghcn/daily/| grep href|sed 's/.*href="//'|
+sed 's/".*//' |grep '^[a-zA-Z].*'|grep .txt)
+#to first identify all files that end in txt from the website, using sed and grep to sort through 
+#various web expressions
+do
+  curl https://www1.ncdc.noaa.gov/pub/data/ghcn/daily/$file --silent --output $file
+  echo "$file is being downloaded" #tells user which file is being downloaded
+done
+```
+
+
+Comments: I worked with Huy, Norae, Andrea, and Sacha on this assignment. 
