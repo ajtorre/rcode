@@ -1,1 +1,7 @@
-name=A.J. Torre, SID=3034326780, email=ajtorre@berkeley.edu, github_name=ajtorre, status=enrolled
+{
+	"name": "A.J. Torre",
+	"SID": "23135048",
+	"email": "ajtorre@berkeley.edu",
+	"github_name": "ajtorre",
+	"status": "enrolled"
+}
